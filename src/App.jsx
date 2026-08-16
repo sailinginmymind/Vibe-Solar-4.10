@@ -8,7 +8,7 @@ import RegisterScreen from './components/Auth/RegisterScreen';
 import AppLayout from './components/Layout/AppLayout';
 import { getAuthStatus } from './utils/storage';
 
-function App() {
+function AppContent() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showRegister, setShowRegister] = useState(false);
@@ -30,25 +30,15 @@ function App() {
     );
   }
 
-  // Se l'utente è autenticato, mostra l'app
   if (isAuthenticated) {
-    return (
-      <AppProvider>
-        <AppLayout />
-      </AppProvider>
-    );
+    return <AppLayout />;
   }
 
-  // Altrimenti mostra login o register
   return (
-    <AppProvider>
+    <>
       {showRegister ? (
         <RegisterScreen
-          onRegister={() => {
-            // Dopo la registrazione, facciamo auto-login? Oppure torniamo al login.
-            // Per semplicità, torniamo al login con un messaggio.
-            setShowRegister(false);
-          }}
+          onRegister={() => setShowRegister(false)}
           onSwitchToLogin={() => setShowRegister(false)}
         />
       ) : (
@@ -57,6 +47,14 @@ function App() {
           onSwitchToRegister={() => setShowRegister(true)}
         />
       )}
+    </>
+  );
+}
+
+function App() {
+  return (
+    <AppProvider>
+      <AppContent />
     </AppProvider>
   );
 }

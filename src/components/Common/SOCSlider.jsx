@@ -1,13 +1,13 @@
 // ============================================================
-//  components/Common/SOCSlider.jsx
+//  components/Common/SOCSlider.jsx — con aggiornamento stato
 // ============================================================
 import React, { useEffect, useRef } from 'react';
 import { SolarEngine } from '../../utils/solarEngine';
+import { useApp } from '../../context/AppContext';
 
 export default function SOCSlider({
   label,
   value,
-  onChange,
   batteryAh,
   currentPower,
   target1 = 80,
@@ -15,6 +15,7 @@ export default function SOCSlider({
   target3 = 100,
   isPs = false,
 }) {
+  const { setSOC, setPsSOC } = useApp();
   const sliderRef = useRef(null);
 
   useEffect(() => {
@@ -22,6 +23,15 @@ export default function SOCSlider({
       sliderRef.current.style.setProperty('--fill', `${value}%`);
     }
   }, [value]);
+
+  const handleChange = (val) => {
+    const num = parseFloat(val);
+    if (isPs) {
+      setPsSOC(num);
+    } else {
+      setSOC(num);
+    }
+  };
 
   const time1 = SolarEngine.estimateChargeTime(value, target1, currentPower, batteryAh);
   const time2 = SolarEngine.estimateChargeTime(value, target2, currentPower, batteryAh);
@@ -46,7 +56,7 @@ export default function SOCSlider({
         min="0"
         max="100"
         value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
+        onChange={(e) => handleChange(e.target.value)}
         className="w-full"
         style={{ accentColor }}
       />

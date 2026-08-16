@@ -1,9 +1,9 @@
-// vite.config.js
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
+  base: '/Vibe-Solar-4.10/',  // <--- aggiornato per la nuova repo
   server: {
     port: 3000,
   },

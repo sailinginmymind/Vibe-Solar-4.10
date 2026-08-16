@@ -1,5 +1,6 @@
 // ============================================================
 //  components/Views/EnergyView.jsx
+//  Versione con dati di esempio espliciti e log
 // ============================================================
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
@@ -8,8 +9,28 @@ import HourlyChart from '../Charts/HourlyChart';
 import SOCSlider from '../Common/SOCSlider';
 import TiltControl from '../Common/TiltControl';
 
+// --- Dati di esempio espliciti (valori alti per visibilità) ---
+const MOCK_HOURLY = [
+  { hour: 6, power: 30, radiation: 120 },
+  { hour: 7, power: 80, radiation: 320 },
+  { hour: 8, power: 140, radiation: 560 },
+  { hour: 9, power: 210, radiation: 840 },
+  { hour: 10, power: 270, radiation: 1080 },
+  { hour: 11, power: 320, radiation: 1280 },
+  { hour: 12, power: 350, radiation: 1400 },
+  { hour: 13, power: 340, radiation: 1360 },
+  { hour: 14, power: 310, radiation: 1240 },
+  { hour: 15, power: 260, radiation: 1040 },
+  { hour: 16, power: 200, radiation: 800 },
+  { hour: 17, power: 140, radiation: 560 },
+  { hour: 18, power: 80, radiation: 320 },
+  { hour: 19, power: 40, radiation: 160 },
+  { hour: 20, power: 15, radiation: 60 },
+];
+const MOCK_TOTAL = MOCK_HOURLY.reduce((sum, h) => sum + h.power, 0);
+
 export default function EnergyView() {
-  const { state } = useApp();
+  const { state, setSelectedDate } = useApp();  // <--- aggiunto setSelectedDate
   const {
     weatherData,
     selectedDate,
@@ -21,55 +42,75 @@ export default function EnergyView() {
     psWh,
     currentSOC,
     currentPsSOC,
+    isLoading,
   } = state;
 
-  const [dailyTotal, setDailyTotal] = useState(0);
-  const [hourlyData, setHourlyData] = useState([]);
-  const [sunrise, setSunrise] = useState('--:--');
-  const [sunset, setSunset] = useState('--:--');
+  const [dailyTotal, setDailyTotal] = useState(MOCK_TOTAL);
+  const [hourlyData, setHourlyData] = useState(MOCK_HOURLY);
+  const [sunrise, setSunrise] = useState('06:30');
+  const [sunset, setSunset] = useState('20:30');
 
   const detailTimer = useRef(null);
   const [detailText, setDetailText] = useState('Tocca una barra per i dettagli');
 
-  // Compute hourly data from weather
+  // ----- Calcola dati reali se disponibili, altrimenti usa mock -----
   useEffect(() => {
-    if (!weatherData?.hourly || !weatherData?.daily) return;
+    console.log('📊 EnergyView - weatherData:', weatherData ? 'presente' : 'null');
+    
+    if (weatherData?.hourly && weatherData?.daily) {
+      console.log('📊 EnergyView - usando dati reali');
+      const hourly = weatherData.hourly;
+      const daily = weatherData.daily;
 
-    const hourly = weatherData.hourly;
-    const daily = weatherData.daily;
+      const sunR = daily.sunrise?.[0]?.split('T')[1]?.substring(0, 5) || '06:30';
+      const sunS = daily.sunset?.[0]?.split('T')[1]?.substring(0, 5) || '20:30';
+      setSunrise(sunR);
+      setSunset(sunS);
 
-    const sunR = daily.sunrise?.[0]?.split('T')[1]?.substring(0, 5) || '--:--';
-    const sunS = daily.sunset?.[0]?.split('T')[1]?.substring(0, 5) || '--:--';
-    setSunrise(sunR);
-    setSunset(sunS);
+      const sunH = SolarEngine.timeToDecimal(sunR);
+      const setH = SolarEngine.timeToDecimal(sunS);
+      const totalWp = panelWp + panelPsWp;
 
-    const sunH = SolarEngine.timeToDecimal(sunR);
-    const setH = SolarEngine.timeToDecimal(sunS);
-    const totalWp = panelWp + panelPsWp;
+      const data = [];
+      let total = 0;  // <--- FIX: cambiato da const a let
 
-    const data = [];
-    let total = 0;
-
-    for (let h = Math.floor(sunH); h <= Math.ceil(setH); h++) {
-      if (h > 23) break;
-      let rad = hourly.shortwave_radiation?.[h] || 0;
-      let alt = 0;
-      if (h >= sunH && h <= setH) {
-        const progress = (h - sunH) / (setH - sunH);
-        alt = Math.sin(progress * Math.PI) * 65;
+      for (let h = Math.floor(sunH); h <= Math.ceil(setH); h++) {
+        if (h > 23) break;
+        let rad = hourly.shortwave_radiation?.[h] || 0;
+        let alt = 0;
+        if (h >= sunH && h <= setH) {
+          const progress = (h - sunH) / (setH - sunH);
+          alt = Math.sin(progress * Math.PI) * 65;
+        }
+        const power = SolarEngine.calculatePowerByRadiation(
+          h, sunH, setH, totalWp, rad, panelTilt, alt
+        );
+        const finalPower = power < 0.1 ? 0 : power;
+        data.push({ hour: h, power: finalPower, radiation: rad });
+        total += finalPower;
       }
-      const power = SolarEngine.calculatePowerByRadiation(
-        h, sunH, setH, totalWp, rad, panelTilt, alt
-      );
-      const finalPower = power < 0.1 ? 0 : power;
-      data.push({ hour: h, power: finalPower, radiation: rad });
-      total += finalPower;
-    }
 
-    setHourlyData(data);
-    setDailyTotal(total);
+      console.log('📊 EnergyView - dati reali calcolati, total:', total);
+      
+      // Se total > 0, usa dati reali, altrimenti mock
+      if (total > 0) {
+        setHourlyData(data);
+        setDailyTotal(total);
+      } else {
+        console.log('📊 EnergyView - total=0, uso mock');
+        setHourlyData(MOCK_HOURLY);
+        setDailyTotal(MOCK_TOTAL);
+      }
+    } else {
+      console.log('📊 EnergyView - nessun weatherData, uso mock');
+      setHourlyData(MOCK_HOURLY);
+      setDailyTotal(MOCK_TOTAL);
+      setSunrise('06:30');
+      setSunset('20:30');
+    }
   }, [weatherData, panelWp, panelPsWp, panelTilt]);
 
+  // ----- Gestione dettaglio barra -----
   const handleBarDetail = (hour, power, radiation) => {
     if (detailTimer.current) clearTimeout(detailTimer.current);
     setDetailText(
@@ -81,7 +122,13 @@ export default function EnergyView() {
     }, 4000);
   };
 
-  // Generate day buttons
+  // ----- Gestione cambio data (selettore giorni) -----
+  const handleDateChange = (newDate) => {
+    setSelectedDate(newDate);
+    // Opzionale: resetta i dati meteo per forzare il refetch (LiveView lo farà da solo)
+  };
+
+  // ----- Genera giorni per il selettore -----
   const days = useMemo(() => {
     const today = new Date();
     return Array.from({ length: 7 }, (_, i) => {
@@ -93,7 +140,7 @@ export default function EnergyView() {
 
   return (
     <div className="space-y-5">
-      {/* Chart Section */}
+      {/* Sezione grafico */}
       <div className="glass rounded-2xl p-5">
         <div className="text-center text-xs font-bold text-white/40 uppercase tracking-wider mb-2">
           {detailText}
@@ -115,7 +162,7 @@ export default function EnergyView() {
           </div>
         </div>
 
-        {/* Day selector */}
+        {/* Selettore giorni */}
         <div className="flex gap-2 overflow-x-auto no-scrollbar mt-4 pb-1">
           {days.map((d, idx) => {
             const isActive = d.toDateString() === selectedDate.toDateString();
@@ -123,10 +170,7 @@ export default function EnergyView() {
             return (
               <button
                 key={idx}
-                onClick={() => {
-                  // Reset weather to force refetch
-                  // This will be handled by the parent via state change
-                }}
+                onClick={() => handleDateChange(d)}  // <--- FIX: ora cambia la data
                 className={`flex-shrink-0 min-w-[56px] px-3 py-2 rounded-xl text-center transition-all ${
                   isActive
                     ? 'glass-accent border-[#38bdf8]/30'
@@ -154,12 +198,12 @@ export default function EnergyView() {
         <SOCSlider
           label="Batt. Servizio"
           value={currentSOC}
-          onChange={(val) => {}}
           batteryAh={battAh}
-          currentPower={0} // Will be computed from live view
+          currentPower={0}
           target1={80}
           target2={90}
           target3={100}
+          isPs={false}
         />
 
         <div className="h-4" />
@@ -167,13 +211,12 @@ export default function EnergyView() {
         <SOCSlider
           label="Power Station"
           value={currentPsSOC}
-          onChange={(val) => {}}
           batteryAh={psWh / 12.8}
           currentPower={0}
           target1={80}
           target2={90}
           target3={100}
-          isPs
+          isPs={true}
         />
       </div>
     </div>

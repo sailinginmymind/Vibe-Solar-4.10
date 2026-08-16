@@ -1,10 +1,9 @@
 // ============================================================
 //  context/AppContext.jsx — Global State with Supabase
+//  VERSIONE COMPLETA CON FIX USER ID
 // ============================================================
 import React, { createContext, useContext, useReducer, useCallback, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { SolarEngine } from '../utils/solarEngine';
-import { WeatherAPI } from '../utils/weatherAPI';
 import {
   loadStorageData,
   saveStorageData,
@@ -15,7 +14,7 @@ import {
 // --- State Shape ---
 const initialState = {
   user: getAuthUser() || 'Camperista',
-  userId: null, // Supabase user ID
+  userId: loadStorageData('vibe_user_id') || null,
   isWh: false,
 
   // Hardware
@@ -117,18 +116,27 @@ const AppContext = createContext(null);
 export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
 
-  // Carica i dati salvati localmente all'avvio
+  // ----- Carica i dati salvati localmente all'avvio -----
   useEffect(() => {
     const userId = loadStorageData('vibe_user_id');
     const username = getAuthUser();
     if (userId && username) {
+      console.log('👤 Utente trovato in localStorage:', { userId, username });
       dispatch({ type: 'SET_USER', payload: { id: userId, username } });
-      // Sincronizza dal cloud all'avvio
-      sincronizzaDatiGarage();
+    } else {
+      console.log('⚠️ Nessun utente trovato in localStorage');
     }
   }, []);
 
-  // Persist hardware settings to localStorage
+  // ----- AUTO-SYNC: ogni volta che userId cambia, sincronizza i dati -----
+  useEffect(() => {
+    if (state.userId) {
+      console.log('🔄 userId cambiato, sincronizzo garage...', state.userId);
+      sincronizzaDatiGarage();
+    }
+  }, [state.userId]);
+
+  // ----- Persist hardware settings to localStorage -----
   useEffect(() => {
     saveStorageData(STORAGE_KEYS.CAMPER_NAME, state.camperName);
     saveStorageData(STORAGE_KEYS.BATT_AH, state.battAh);
@@ -155,12 +163,13 @@ export function AppProvider({ children }) {
   const salvaConfigurazioneSuCloud = useCallback(async () => {
     const userId = state.userId || loadStorageData('vibe_user_id');
     if (!userId) {
-      console.warn('⚠️ Nessun utente loggato');
+      console.warn('⚠️ Nessun utente loggato, salvataggio su cloud impossibile');
       return false;
     }
 
     try {
-      // Verifica se esiste già una configurazione per questo utente
+      console.log('☁️ Salvataggio su cloud per userId:', userId);
+      
       const { data: existing, error: checkError } = await supabase
         .from('camper_configs')
         .select('id')
@@ -184,13 +193,11 @@ export function AppProvider({ children }) {
 
       let result;
       if (existing) {
-        // Update
         result = await supabase
           .from('camper_configs')
           .update(configData)
           .eq('user_id', userId);
       } else {
-        // Insert
         result = await supabase
           .from('camper_configs')
           .insert({ user_id: userId, ...configData });
@@ -214,6 +221,8 @@ export function AppProvider({ children }) {
     }
 
     try {
+      console.log('📥 Sincronizzazione da cloud per userId:', userId);
+      
       const { data, error } = await supabase
         .from('camper_configs')
         .select('*')
@@ -235,7 +244,6 @@ export function AppProvider({ children }) {
           },
         });
 
-        // Aggiorna anche lat/lng se presenti
         if (data.lat) {
           dispatch({ type: 'SET_LAT', payload: String(data.lat) });
         }
@@ -280,7 +288,6 @@ export function AppProvider({ children }) {
 
   const logout = useCallback(() => {
     dispatch({ type: 'LOGOUT' });
-    // Cleanup storage
     Object.values(STORAGE_KEYS).forEach(key => {
       localStorage.removeItem(key);
       sessionStorage.removeItem(key);
@@ -291,8 +298,10 @@ export function AppProvider({ children }) {
 
   // --- Gestione utente da Supabase ---
   const setUserFromSupabase = useCallback((userId, username) => {
+    console.log('👤 Set user from Supabase:', { userId, username });
     dispatch({ type: 'SET_USER', payload: { id: userId, username } });
     saveStorageData('vibe_user_id', userId);
+    saveStorageData(STORAGE_KEYS.USER, username);
   }, []);
 
   const value = {

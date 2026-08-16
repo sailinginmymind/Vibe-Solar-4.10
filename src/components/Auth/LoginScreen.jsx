@@ -1,11 +1,13 @@
 // ============================================================
-//  components/Auth/LoginScreen.jsx — Con gestione errori avanzata
+//  components/Auth/LoginScreen.jsx — Supabase Auth
 // ============================================================
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { setAuthLocal, setAuthSession } from '../../utils/storage';
+import { useApp } from '../../context/AppContext';
 
 export default function LoginScreen({ onLogin, onSwitchToRegister }) {
+  const { setUserFromSupabase } = useApp();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
@@ -19,7 +21,7 @@ export default function LoginScreen({ onLogin, onSwitchToRegister }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     const trimmedUsername = username.trim();
     if (!trimmedUsername || !password.trim()) {
       setError('Inserisci username e password');
@@ -30,64 +32,49 @@ export default function LoginScreen({ onLogin, onSwitchToRegister }) {
     setError('');
 
     try {
-      // 1. Cerca l'utente nella tabella profiles
       const { data: profiles, error: profileError } = await supabase
         .from('profiles')
         .select('id, username')
         .eq('username', trimmedUsername)
         .maybeSingle();
 
-      if (profileError) {
-        console.error('Profile error:', profileError);
-        setError('Errore nella verifica dell\'utente');
-        setIsLoading(false);
-        return;
-      }
-
+      if (profileError) throw profileError;
       if (!profiles) {
-        setError('Utente non trovato. Registrati prima.');
+        setError('Utente non trovato');
         setIsLoading(false);
         return;
       }
 
-      // 2. Login con Supabase Auth
       const email = `${trimmedUsername}@vibesolar.local`;
-      
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (authError) {
-        console.error('Auth error:', authError);
-        if (authError.message.includes('Invalid login credentials')) {
-          setError('Password errata');
-        } else if (authError.message.includes('Email not confirmed')) {
-          setError('Email non confermata. Controlla la tua casella.');
-        } else {
-          setError(authError.message);
-        }
+        setError(authError.message.includes('Invalid login') ? 'Password errata' : authError.message);
         setIsLoading(false);
         return;
       }
 
-      // 3. Login riuscito
       if (authData?.user) {
         const userId = authData.user.id;
 
+        // 1. Aggiorna il context con userId e username
+        setUserFromSupabase(userId, trimmedUsername);
+
+        // 2. Salva nei cookie/session
         if (rememberMe) {
           setAuthLocal(trimmedUsername);
         } else {
           setAuthSession(trimmedUsername);
         }
-        
         localStorage.setItem('vibe_user_id', userId);
-        
-        // Sincronizza i dati dal cloud
+
         console.log('✅ Login riuscito per:', trimmedUsername);
         onLogin();
       } else {
-        setError('Errore sconosciuto durante il login');
+        setError('Errore sconosciuto');
         setIsLoading(false);
       }
     } catch (err) {
@@ -107,19 +94,13 @@ export default function LoginScreen({ onLogin, onSwitchToRegister }) {
       <div className="login-card rounded-3xl p-8 md:p-10 max-w-sm w-full mx-4 relative z-10 animate-fade-slide-up">
         <div className="text-center mb-8">
           <div className="text-4xl mb-2 opacity-80">🌄</div>
-          <h1 className="text-3xl md:text-4xl font-light text-white tracking-tight">
-            Vibe Solar
-          </h1>
-          <p className="text-sm text-white/40 font-light mt-1">
-            Energia solare per il tuo viaggio
-          </p>
+          <h1 className="text-3xl md:text-4xl font-light text-white tracking-tight">Vibe Solar</h1>
+          <p className="text-sm text-white/40 font-light mt-1">Energia solare per il tuo viaggio</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label htmlFor="username" className="block text-sm font-normal text-white/50 mb-1.5">
-              Username
-            </label>
+            <label htmlFor="username" className="block text-sm font-normal text-white/50 mb-1.5">Username</label>
             <input
               ref={inputRef}
               id="username"
@@ -137,9 +118,7 @@ export default function LoginScreen({ onLogin, onSwitchToRegister }) {
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-normal text-white/50 mb-1.5">
-              Password
-            </label>
+            <label htmlFor="password" className="block text-sm font-normal text-white/50 mb-1.5">Password</label>
             <input
               id="password"
               type="password"
@@ -175,9 +154,7 @@ export default function LoginScreen({ onLogin, onSwitchToRegister }) {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <span className="text-sm text-white/40 group-hover:text-white/60 transition-colors">
-                Resta collegato
-              </span>
+              <span className="text-sm text-white/40 group-hover:text-white/60 transition-colors">Resta collegato</span>
             </label>
           </div>
 
@@ -215,9 +192,7 @@ export default function LoginScreen({ onLogin, onSwitchToRegister }) {
           </p>
         </div>
 
-        <div className="mt-4 text-center text-xs text-white/20 font-light">
-          Vibe Solar · v3.3
-        </div>
+        <div className="mt-4 text-center text-xs text-white/20 font-light">Vibe Solar · v4.0</div>
       </div>
     </div>
   );
